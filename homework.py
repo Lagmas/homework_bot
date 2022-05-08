@@ -11,11 +11,13 @@ import telegram
 
 
 load_dotenv()
+
 logging.basicConfig(
     level=logging.DEBUG,
     filename='program.log',
     format='%(asctime)s, %(levelname)s, %(message)s, %(name)s'
 )
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 handler = logging.StreamHandler(sys.stdout)
@@ -27,11 +29,10 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-PERIOD_TIME: int = 18000
-RETRY_TIME = 600
+PERIOD_TIME = 10
+RETRY_TIME = 60
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
-
 
 HOMEWORK_STATUSES = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
@@ -51,8 +52,7 @@ def send_message(bot, message):
 
 def get_api_answer(current_timestamp):
     """Делает запрос к эндпоинту API-сервиса."""
-    timestamp = current_timestamp
-    params = {'from_date': timestamp}
+    params = {'from_date': current_timestamp}
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=params)
         if response.status_code != HTTPStatus.OK:
@@ -102,11 +102,13 @@ def check_tokens():
         'telegram_token': TELEGRAM_TOKEN,
         'telegram_chat_id': TELEGRAM_CHAT_ID,
     }
+    result = True
     for key, value in tokens.items():
         if value is None:
             logging.error(f'{key} не обнаружен')
-            return False
-    return True
+            result = False
+            continue
+    return result
 
 
 def main():
@@ -116,7 +118,6 @@ def main():
         return
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time() - PERIOD_TIME)
-    last_error_message = ''
     while True:
         try:
             response = get_api_answer(current_timestamp)
@@ -128,20 +129,12 @@ def main():
                 send_message(bot, message)
                 logger.info(('Сообщение отправленно в телеграм: '
                              f'{message}'))
-            current_timestamp = int(time.time() - PERIOD_TIME)
+            current_timestamp = response.get('current_date', current_timestamp)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
-            if last_error_message != message:
-                try:
-                    send_message(bot, message)
-                    last_error_message = message
-                except Exception as send_error:
-                    message = ('Сбой при отправке сообщения об ошибке: '
-                               f'{send_error}')
-                    logger.error(message)
         finally:
-            time.sleep(RETRY_TIME)
+            time.sleep(RETRY_TIME - PERIOD_TIME)
 
 
 if __name__ == '__main__':
